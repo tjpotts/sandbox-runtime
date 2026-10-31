@@ -31,6 +31,7 @@ import {
 import {
   wrapCommandWithSandboxLinux,
   cleanupBwrapMountPoints,
+  linuxGetCwdMandatoryDenyPaths,
   unreadableDirectories,
   type LinuxSandboxParams,
 } from '../../src/sandbox/linux-sandbox-utils.js'
@@ -129,13 +130,19 @@ describe.if(isSupportedPlatform)(
     function runSandboxedWrite(
       filePath: string,
       content: string,
+      allowDangerousFiles: readonly string[] = [],
     ): Promise<{ success: boolean; stderr: string }> {
-      return runSandboxed(`echo '${content}' > '${filePath}'`)
+      return runSandboxed(
+        `echo '${content}' > '${filePath}'`,
+        [],
+        allowDangerousFiles,
+      )
     }
 
     async function runSandboxed(
       command: string,
       ripgrepArgs: string[] = [],
+      allowDangerousFiles: readonly string[] = [],
     ): Promise<{ success: boolean; stderr: string }> {
       const platform = getPlatform()
 
@@ -152,6 +159,7 @@ describe.if(isSupportedPlatform)(
           needsNetworkRestriction: false,
           readConfig: undefined,
           writeConfig,
+          allowDangerousFiles,
         })
       } else {
         wrappedCommand = await wrapCommandWithSandboxLinux({
@@ -160,6 +168,7 @@ describe.if(isSupportedPlatform)(
           readConfig: undefined,
           writeConfig,
           ripgrepConfig: { command: 'rg', args: ripgrepArgs },
+          allowDangerousFiles,
         })
       }
 
@@ -694,6 +703,23 @@ describe.if(isSupportedPlatform)(
         expect(readFileSync('.git/hooks/pre-commit', 'utf8')).toBe(
           ORIGINAL_CONTENT,
         )
+      })
+    })
+
+    describe('allowDangerousFiles option', () => {
+      it('treats an opted-in dangerous name as an ordinary file at every depth', async () => {
+        const targets = ['.mcp.json', 'opted-in/.mcp.json']
+        mkdirSync(join(TEST_DIR, 'opted-in'), { recursive: true })
+        for (const target of targets) writeFileSync(target, ORIGINAL_CONTENT)
+
+        for (const target of targets) {
+          const result = await runSandboxedWrite(target, MODIFIED_CONTENT, [
+            '.mcp.json',
+          ])
+
+          expect(result.success).toBe(true)
+          expect(readFileSync(target, 'utf8').trim()).toBe(MODIFIED_CONTENT)
+        }
       })
     })
 
@@ -1600,6 +1626,15 @@ describe('macGetMandatoryDenyEntries - Unit Tests', () => {
     expect(hasGitConfigPattern).toBe(false)
   })
 
+  it('excludes opted-in dangerous files while retaining the other names', () => {
+    const patterns = macGetMandatoryDenyEntries(false, ['.mcp.json']).map(
+      e => e.path,
+    )
+
+    expect(patterns.some(p => p.endsWith('.mcp.json'))).toBe(false)
+    expect(patterns.some(p => p.endsWith('.bashrc'))).toBe(true)
+  })
+
   it('always includes .git/hooks in deny patterns regardless of allowGitConfig', () => {
     const patternsWithoutGitConfig = macGetMandatoryDenyEntries(false).map(
       e => e.path,
@@ -1627,5 +1662,14 @@ describe('macGetMandatoryDenyEntries - Unit Tests', () => {
       p => p.includes('.git/config') || p.endsWith('.git/config'),
     )
     expect(hasGitConfigPattern).toBe(true)
+  })
+})
+
+describe('linuxGetCwdMandatoryDenyPaths - Unit Tests', () => {
+  it('excludes opted-in dangerous files while retaining the other names', () => {
+    const paths = linuxGetCwdMandatoryDenyPaths(false, ['.mcp.json'])
+
+    expect(paths.some(p => p.endsWith('/.mcp.json'))).toBe(false)
+    expect(paths.some(p => p.endsWith('/.bashrc'))).toBe(true)
   })
 })

@@ -1245,7 +1245,10 @@ async function initializeSteps(
           // them, so the monitor must not judge by them either.
           ...(config.filesystem.disabled
             ? []
-            : linuxGetCwdMandatoryDenyPaths(getAllowGitConfig())),
+            : linuxGetCwdMandatoryDenyPaths(
+                getAllowGitConfig(),
+                getAllowDangerousFiles(),
+              )),
         ],
         ignoreViolations: config.ignoreViolations,
         resolveCommandText,
@@ -2256,6 +2259,16 @@ function getAllowGitConfig(): boolean {
   return config?.filesystem?.allowGitConfig ?? false
 }
 
+function getAllowDangerousFiles(
+  customConfig?: Partial<SandboxRuntimeConfig>,
+): readonly string[] {
+  return (
+    customConfig?.filesystem?.allowDangerousFiles ??
+    config?.filesystem?.allowDangerousFiles ??
+    []
+  )
+}
+
 /**
  * Union of session-level and per-call `git.safeDirectories`. Marks
  * paths as `safe.directory` (dubious-ownership bypass) WITHOUT
@@ -2708,6 +2721,7 @@ async function wrapWithSandboxOnce(
         ignoreViolations: getIgnoreViolations(),
         allowPty,
         allowGitConfig: getAllowGitConfig(),
+        allowDangerousFiles: getAllowDangerousFiles(customConfig),
         gitSafeDirectories,
         enableWeakerNetworkIsolation: getEnableWeakerNetworkIsolation(),
         allowAppleEvents: getAllowAppleEvents(),
@@ -2748,6 +2762,7 @@ async function wrapWithSandboxOnce(
         ripgrepConfig: getRipgrepConfig(),
         mandatoryDenySearchDepth: getMandatoryDenySearchDepth(),
         allowGitConfig: getAllowGitConfig(),
+        allowDangerousFiles: getAllowDangerousFiles(customConfig),
         gitSafeDirectories,
         seccompConfig: getSeccompConfig(),
         bwrapPath: config?.bwrapPath,

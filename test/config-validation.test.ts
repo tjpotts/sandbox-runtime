@@ -25,6 +25,32 @@ describe('Config Validation', () => {
     expect(result.success).toBe(true)
   })
 
+  test('should only allow built-in dangerous file names as write opt-outs', () => {
+    const base = {
+      network: { allowedDomains: [], deniedDomains: [] },
+      filesystem: { denyRead: [], allowWrite: [], denyWrite: [] },
+    }
+
+    expect(
+      SandboxRuntimeConfigSchema.safeParse({
+        ...base,
+        filesystem: {
+          ...base.filesystem,
+          allowDangerousFiles: ['.mcp.json'],
+        },
+      }).success,
+    ).toBe(true)
+    expect(
+      SandboxRuntimeConfigSchema.safeParse({
+        ...base,
+        filesystem: {
+          ...base.filesystem,
+          allowDangerousFiles: ['.env'],
+        },
+      }).success,
+    ).toBe(false)
+  })
+
   test('should validate a config with valid domains', () => {
     const config = {
       network: {

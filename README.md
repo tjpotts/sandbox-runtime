@@ -1165,6 +1165,22 @@ $ srt 'echo "bad" > .git/hooks/pre-commit'
 /bin/bash: .git/hooks/pre-commit: Operation not permitted
 ```
 
+**Allowing a dangerous file name:** On macOS and Linux, use
+`filesystem.allowDangerousFiles` to make one of the always-blocked file names
+subject only to the ordinary `allowWrite` and `denyWrite` rules. The opt-out
+applies to that name in the working directory and everywhere below it; it does
+not affect dangerous directories, Git hooks, or `.git/config` (use
+`allowGitConfig` for the latter).
+
+```json
+{
+  "filesystem": {
+    "allowWrite": ["."],
+    "allowDangerousFiles": [".mcp.json", ".ripgreprc"]
+  }
+}
+```
+
 **Note (Linux):** A mandatory deny path that does not exist yet is blocked as well. bubblewrap covers it with a read-only `/dev/null`, or mounts an empty read-only directory at the first missing intermediate component, and those host mount points are removed by `cleanupAfterCommand()` — see "Write denies on paths that do not exist yet (Linux)" above. macOS uses glob patterns, which cover existing and new files alike.
 
 **Pinned directories (Linux):** Every existing ancestor of a protected path (a write-denied path, a read-denied file or directory, a masked credential file) up to the allowed write root covering it is made a mountpoint — "pinned" — and cannot be renamed or removed from inside the sandbox: `mv` or `rmdir` of such a directory (for example a nested repository's parent) fails with `EBUSY` ("Device or resource busy"), and `rm -rf` of a nested repository leaves the pinned directories and the protected files behind (as with `.git/hooks`). A pin is buried under the mounts above it, so it never appears on a lookup path: reads, writes, creation, renames and hard links inside or across a pinned directory are unaffected.

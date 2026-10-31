@@ -31,6 +31,18 @@ export const DANGEROUS_FILES = [
 ] as const
 
 /**
+ * The dangerous file names that retain their mandatory write protection after
+ * applying a caller's explicit opt-outs. Entries outside DANGEROUS_FILES are
+ * ignored here; configuration validation rejects them for normal callers.
+ */
+export function getProtectedDangerousFiles(
+  allowDangerousFiles: readonly string[] = [],
+): string[] {
+  const allowed = new Set(allowDangerousFiles)
+  return DANGEROUS_FILES.filter(fileName => !allowed.has(fileName))
+}
+
+/**
  * Dangerous directories that should be protected from writes.
  * These directories contain sensitive configuration or executable files.
  */

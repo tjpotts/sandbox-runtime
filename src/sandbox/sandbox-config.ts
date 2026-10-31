@@ -22,7 +22,10 @@ import {
   stripDomainPatternPort,
 } from './domain-pattern.js'
 import { parseAddressRange } from './address.js'
-import { containsGlobCharsForPlatform } from './sandbox-utils.js'
+import {
+  DANGEROUS_FILES,
+  containsGlobCharsForPlatform,
+} from './sandbox-utils.js'
 import { getPlatform } from '../utils/platform.js'
 
 /**
@@ -987,6 +990,13 @@ export const FilesystemConfigSchema = z.object({
     .optional()
     .describe(
       'Allow writes to .git/config files (default: false). Enables git remote URL updates while keeping .git/hooks protected.',
+    ),
+  allowDangerousFiles: z
+    .array(z.enum(DANGEROUS_FILES))
+    .optional()
+    .describe(
+      'Dangerous file names to treat as ordinary files rather than built-in mandatory write denies. ' +
+        'Each name is allowed everywhere filesystem.allowWrite permits it, including below the working directory.',
     ),
 })
 

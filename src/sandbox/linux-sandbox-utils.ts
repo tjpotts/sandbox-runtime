@@ -15,6 +15,7 @@ import {
   generateProxyEnvVars,
   buildPosixGitSafeDirEnv,
   normalizePathForSandbox,
+  expandTilde,
   normalizeCaseForComparison,
   isSymlinkOutsideBoundary,
   encodeSandboxedCommand,
@@ -3099,6 +3100,7 @@ async function generateFilesystemArgs(
     landing: string
     restoredWrites: RestoredMount[]
     restoredReads: RestoredMount[]
+    restoresNothing: boolean
   }> = []
   const fileMasks: Array<{ source: string; landing: string }> = []
 
@@ -3257,7 +3259,7 @@ async function generateFilesystemArgs(
           readDenialAround(restoreTarget, landing),
         nameLocation: nameLocationOf,
       })
-      readDenyTmpfsUnits.push({ landing, ...restored })
+      readDenyTmpfsUnits.push({ landing, ...restored, restoresNothing })
     } else {
       // For files, only an exact allowRead match overrides the deny: an
       // entry that names this very file, through whatever symlinked
@@ -3467,6 +3469,78 @@ async function generateFilesystemArgs(
       )
       args.push('--ro-bind', mask.source, mask.landing)
     }
+  }
+
+  // Restoring a target does not restore a link name hidden by another tmpfs.
+  // Cross-region carve-out binds are deliberately refused above, so they
+  // cannot supply the missing name.
+  // Recreate only explicitly named links, at their canonical parent, pointing
+  // straight to the resolved target. This needs no host bind at the alias:
+  // target-side denies and credential masks still apply through the link.
+  const readNames = (readConfig?.allowWithinDeny ?? []).map(p =>
+    path.resolve(expandTilde(p)),
+  )
+  const independentReadNames = readNames.map(nameLocationOf)
+  const recreatedLinks = new Set<string>()
+  for (const name of readNames) {
+    const dest = nameLocationOf(name)
+    if (
+      recreatedLinks.has(dest) ||
+      !isHiddenByTmpfs(dest, 'writes and reads')
+    ) {
+      continue
+    }
+    let target: string
+    try {
+      if (!fs.lstatSync(name).isSymbolicLink()) continue
+      target = realPathOf(name)
+    } catch {
+      // Missing, dangling, cyclic or unreadable links grant nothing.
+      continue
+    }
+    if (
+      target === '/' ||
+      isHiddenByTmpfs(target, 'writes and reads') ||
+      fileMasks.some(mask => isAtOrUnder(target, mask.landing)) ||
+      readDenyTmpfsUnits.some(
+        unit => unit.restoresNothing && isAtOrUnder(dest, unit.landing),
+      )
+    ) {
+      continue
+    }
+
+    // The link's own normalized allowRead may have restored its target. That
+    // alone is not permission to recreate the alias: require a separate grant
+    // wherever a tmpfs hid the target, or a target outside all hidden regions.
+    if (
+      readDenyTmpfsUnits.some(unit => isAtOrUnder(target, unit.landing)) &&
+      !independentReadNames.some(p => isAtOrUnder(target, p)) &&
+      !restorableWritePaths.some(p => isAtOrUnder(target, p))
+    ) {
+      continue
+    }
+    if (!outsideCredentials(dest)) continue
+
+    // A descendant mount has already made this name a directory in the new
+    // filesystem. Never replace it, a mask, or a stand-in with a link.
+    if (
+      readDenyTmpfsUnits.some(
+        unit =>
+          isAtOrUnder(unit.landing, dest) ||
+          [...unit.restoredReads, ...unit.restoredWrites].some(r =>
+            isAtOrUnder(r.dest, dest),
+          ),
+      ) ||
+      fileMasks.some(mask => isAtOrUnder(mask.landing, dest)) ||
+      emittedDenyWriteDests.some(p => isAtOrUnder(p, dest))
+    ) {
+      continue
+    }
+    args.push('--symlink', target, dest)
+    recreatedLinks.add(dest)
+    logForDebugging(
+      `[Sandbox Linux] Recreated explicitly allowed symlink: ${dest} -> ${target}`,
+    )
   }
 
   // INVARIANT: the fake-file store directory must never be writable from

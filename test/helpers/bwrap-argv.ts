@@ -5,14 +5,15 @@ import { quote } from '../../src/utils/shell-quote.js'
  * file and not in the command. */
 const ARGS_FILE_ARGV0 = 'srt-args'
 
-/** The mount flags this generator emits with a source and a destination. */
-const MOUNT_FLAGS = ['--bind', '--ro-bind']
+/** Filesystem operations with a source (or link target) and destination. */
+const MOUNT_FLAGS = ['--bind', '--ro-bind', '--symlink']
 
 /** How many words follow each mount flag this generator emits. */
 const MOUNT_ARITY: Record<string, number> = {
   '--bind': 2,
   '--ro-bind': 2,
   '--dev-bind': 2,
+  '--symlink': 2,
   '--tmpfs': 1,
   '--dev': 1,
   '--proc': 1,
@@ -25,7 +26,9 @@ const MOUNT_ARITY: Record<string, number> = {
  * typo'd flag, or a transposed source and destination, match nothing and
  * report 0 for free.
  */
-type MountWords = ['--tmpfs', string] | ['--bind' | '--ro-bind', string, string]
+type MountWords =
+  | ['--tmpfs', string]
+  | ['--bind' | '--ro-bind' | '--symlink', string, string]
 
 /**
  * The wrapped command as argv words. Refused when the mounts went to the
